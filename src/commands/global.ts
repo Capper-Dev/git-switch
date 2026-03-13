@@ -1,11 +1,10 @@
 import * as prompts from "@clack/prompts";
-import { switchDesktopToProfile } from "../core/desktop/index.js";
 import { getDesktopProfile } from "../core/desktop-profiles.js";
 import { applyProfileToConfig } from "../core/git-config.js";
 import { listAllProfiles } from "../core/profiles.js";
 import { updateSSHConfigForProfiles } from "../core/ssh-config.js";
 import { globalGitConfigPath } from "../utils/paths.js";
-import { selectProfile } from "../utils/prompts.js";
+import { selectProfile, switchDesktopWithRecovery } from "../utils/prompts.js";
 
 export async function globalCommand(profileId?: string): Promise<void> {
 	prompts.intro("git-switch global — Set global git identity");
@@ -35,17 +34,7 @@ export async function globalCommand(profileId?: string): Promise<void> {
 	if (profile.desktop_profile_id) {
 		const desktopProfile = getDesktopProfile(profile.desktop_profile_id);
 		if (desktopProfile) {
-			const desktopSpinner = prompts.spinner();
-			desktopSpinner.start("Switching GitHub Desktop...");
-			try {
-				await switchDesktopToProfile(desktopProfile);
-				desktopSpinner.stop("GitHub Desktop switched.");
-			} catch (err) {
-				desktopSpinner.stop("Desktop switch failed.");
-				prompts.log.warn(
-					`Could not switch Desktop: ${err instanceof Error ? err.message : String(err)}`,
-				);
-			}
+			await switchDesktopWithRecovery(desktopProfile);
 		}
 	}
 

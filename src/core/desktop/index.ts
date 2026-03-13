@@ -4,9 +4,13 @@ import {
 	DesktopTokenExpiredError,
 	GitSwitchError,
 } from "../../utils/errors.js";
-import { listAllDesktopProfiles } from "../desktop-profiles.js";
+import {
+	listAllDesktopProfiles,
+	updateDesktopProfileUsersJson,
+} from "../desktop-profiles.js";
 import { pruneSnapshots, takeSnapshot } from "../snapshot/index.js";
 import {
+	fetchDesktopUsersJson,
 	readKeychainEntry,
 	renameKeychainEntry,
 	validateStoredToken,
@@ -26,7 +30,10 @@ export async function switchDesktopToProfile(
 	const othersActive = activeProfiles.filter((dp) => dp.id !== target.id);
 	const targetAlreadyActive = activeProfiles.some((dp) => dp.id === target.id);
 
-	if (othersActive.length === 0 && targetAlreadyActive) {
+	const hasValidUsersData =
+		!!target.users_json && !target.users_json.endsWith("[]");
+
+	if (othersActive.length === 0 && targetAlreadyActive && hasValidUsersData) {
 		log.log.info("GitHub Desktop is already using this profile.");
 		return;
 	}
@@ -74,9 +81,21 @@ export async function switchDesktopToProfile(
 	}
 
 	// Update LevelDB users data (Desktop 3.x)
-	if (target.users_json) {
+	let usersData = target.users_json;
+
+	// If users_json is missing or empty, fetch fresh data from GitHub API
+	if (!hasValidUsersData) {
+		const freshData = await fetchDesktopUsersJson(target.keychain_label);
+		if (freshData) {
+			usersData = freshData;
+			// Persist so we don't need to fetch next time
+			updateDesktopProfileUsersJson(target.id, freshData);
+		}
+	}
+
+	if (usersData && !usersData.endsWith("[]")) {
 		try {
-			writeLocalStorageKey("users", target.users_json);
+			writeLocalStorageKey("users", usersData);
 		} catch (err) {
 			log.log.warn(
 				`Could not update localStorage: ${err instanceof Error ? err.message : err}`,

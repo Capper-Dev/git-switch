@@ -1,8 +1,11 @@
 import * as path from "node:path";
 import * as prompts from "@clack/prompts";
+import { captureCurrentSession } from "../core/desktop/capture.js";
+import { switchDesktopToProfile } from "../core/desktop/index.js";
 import { listAllDesktopProfiles } from "../core/desktop-profiles.js";
 import { listAllProfiles } from "../core/profiles.js";
 import type { DesktopProfile, Profile } from "../providers/types.js";
+import { DesktopTokenExpiredError } from "../utils/errors.js";
 import { run } from "../utils/shell.js";
 
 export function abortIfCancelled<T>(value: T | symbol): T {
@@ -111,6 +114,50 @@ export async function selectDesktopProfile(
 		}),
 	);
 	return desktopProfiles.find((dp) => dp.id === choice) as DesktopProfile;
+}
+
+/**
+ * Handle a Desktop switch with token-expired recovery.
+ * Shows a capture/skip prompt if the token is expired, allowing the user
+ * to re-capture the session and retry.
+ */
+export async function switchDesktopWithRecovery(
+	dp: DesktopProfile,
+): Promise<void> {
+	try {
+		await switchDesktopToProfile(dp);
+	} catch (err) {
+		if (err instanceof DesktopTokenExpiredError) {
+			prompts.log.warn(`Token for "${dp.label}" has expired or been revoked.`);
+			const recovery = abortIfCancelled(
+				await prompts.select({
+					message: "How would you like to proceed?",
+					options: [
+						{
+							value: "capture",
+							label: "Re-capture current Desktop session",
+							hint: "sign into Desktop first, then choose this",
+						},
+						{ value: "skip", label: "Skip Desktop switch" },
+					],
+				}),
+			);
+			if (recovery === "capture") {
+				const captured = await captureCurrentSession();
+				try {
+					await switchDesktopToProfile(captured);
+				} catch (retryErr) {
+					prompts.log.warn(
+						`Desktop switch failed: ${retryErr instanceof Error ? retryErr.message : String(retryErr)}`,
+					);
+				}
+			}
+		} else {
+			prompts.log.warn(
+				`Desktop switch failed: ${err instanceof Error ? err.message : String(err)}`,
+			);
+		}
+	}
 }
 
 /**

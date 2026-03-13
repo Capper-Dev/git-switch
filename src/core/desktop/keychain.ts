@@ -314,18 +314,28 @@ export function readKeychainEntry(label: string): KeychainEntry | null {
 }
 
 /**
+ * Read and decode a GitHub OAuth token from the credential store.
+ * Returns the raw token string, or null if not found or not a GitHub OAuth token.
+ */
+function resolveOAuthToken(label: string): string | null {
+	const entry = readKeychainEntry(label);
+	if (!entry) return null;
+
+	const token = Buffer.from(entry.password, "base64").toString("utf-8");
+	if (!token.startsWith("gho_")) return null;
+
+	return token;
+}
+
+/**
  * Validate a stored GitHub OAuth token against the GitHub API.
  * Returns the GitHub username if valid, or null if expired/invalid.
  */
 export async function validateStoredToken(
 	label: string,
 ): Promise<string | null> {
-	const entry = readKeychainEntry(label);
-	if (!entry) return null;
-
-	// Decode the Base64 token to get the raw OAuth token
-	const token = Buffer.from(entry.password, "base64").toString("utf-8");
-	if (!token.startsWith("gho_")) return null;
+	const token = resolveOAuthToken(label);
+	if (!token) return null;
 
 	try {
 		const resp = await fetch("https://api.github.com/user", {
@@ -342,6 +352,76 @@ export async function validateStoredToken(
 	} catch {
 		// Network error — can't validate, assume OK
 		return "unknown";
+	}
+}
+
+export interface GitHubDesktopUser {
+	login: string;
+	endpoint: string;
+	token: string;
+	emails: {
+		email: string;
+		primary: boolean;
+		verified: boolean;
+		visibility: string | null;
+	}[];
+	avatarURL: string;
+	id: number;
+	name: string;
+	plan: string;
+}
+
+/**
+ * Fetch full GitHub user data from a stored credential, returning a Desktop-compatible
+ * users JSON string (with LevelDB prefix byte). Returns null if the token is invalid.
+ */
+export async function fetchDesktopUsersJson(
+	label: string,
+): Promise<string | null> {
+	const token = resolveOAuthToken(label);
+	if (!token) return null;
+
+	try {
+		const headers = {
+			Authorization: `token ${token}`,
+			Accept: "application/vnd.github.v3+json",
+		};
+
+		const [userResp, emailsResp] = await Promise.all([
+			fetch("https://api.github.com/user", { headers }),
+			fetch("https://api.github.com/user/emails", { headers }),
+		]);
+
+		if (!userResp.ok) return null;
+
+		const user = (await userResp.json()) as {
+			login: string;
+			id: number;
+			name: string | null;
+			avatar_url: string;
+			plan?: { name: string };
+		};
+
+		let emails: GitHubDesktopUser["emails"] = [];
+		if (emailsResp.ok) {
+			emails = (await emailsResp.json()) as GitHubDesktopUser["emails"];
+		}
+
+		const desktopUser: GitHubDesktopUser = {
+			login: user.login,
+			endpoint: "https://api.github.com",
+			token: "",
+			emails,
+			avatarURL: user.avatar_url,
+			id: user.id,
+			name: user.name ?? user.login,
+			plan: user.plan?.name ?? "free",
+		};
+
+		// LevelDB prefix byte \x01 + JSON array
+		return `\x01${JSON.stringify([desktopUser])}`;
+	} catch {
+		return null;
 	}
 }
 

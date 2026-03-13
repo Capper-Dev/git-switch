@@ -68,6 +68,17 @@ export function removeDesktopProfile(id: string): DesktopProfile {
 	return rowToDesktopProfile(row);
 }
 
+export function updateDesktopProfileUsersJson(
+	id: string,
+	usersJson: string,
+): void {
+	const db = getDb();
+	db.update(schema.desktopProfiles)
+		.set({ usersJson })
+		.where(eq(schema.desktopProfiles.id, id))
+		.run();
+}
+
 export function listAllDesktopProfiles(): DesktopProfile[] {
 	const db = getDb();
 	const rows = db.select().from(schema.desktopProfiles).all();

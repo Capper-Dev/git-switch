@@ -1,5 +1,4 @@
 import * as prompts from "@clack/prompts";
-import { switchDesktopToProfile } from "../core/desktop/index.js";
 import { getDesktopProfile } from "../core/desktop-profiles.js";
 import {
 	applyProfileToConfig,
@@ -10,7 +9,11 @@ import { listAllProfiles } from "../core/profiles.js";
 import { pruneSnapshots, takeSnapshot } from "../core/snapshot/index.js";
 import { updateSSHConfigForProfiles } from "../core/ssh-config.js";
 import { repoHash } from "../utils/paths.js";
-import { ensureGitRepo, selectProfile } from "../utils/prompts.js";
+import {
+	ensureGitRepo,
+	selectProfile,
+	switchDesktopWithRecovery,
+} from "../utils/prompts.js";
 
 export async function markCommand(profileId?: string): Promise<void> {
 	prompts.intro("git-switch mark — Apply profile to current repo");
@@ -96,13 +99,7 @@ export async function markCommand(profileId?: string): Promise<void> {
 				initialValue: true,
 			});
 			if (!prompts.isCancel(shouldSwitch) && shouldSwitch) {
-				try {
-					await switchDesktopToProfile(dp);
-				} catch (err) {
-					prompts.log.warn(
-						`GitHub Desktop switch failed: ${err instanceof Error ? err.message : String(err)}`,
-					);
-				}
+				await switchDesktopWithRecovery(dp);
 			}
 		}
 	}
