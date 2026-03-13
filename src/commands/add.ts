@@ -1,7 +1,7 @@
 import * as prompts from "@clack/prompts";
 import {
 	copyKeychainEntry,
-	listGitHubCredentials,
+	listValidGitHubCredentials,
 	readKeychainEntry,
 	renameKeychainEntry,
 } from "../core/desktop/keychain.js";
@@ -237,7 +237,14 @@ export async function addCommand(): Promise<void> {
 
 	// 13. Offer to capture GitHub Desktop session
 	try {
-		let credentials = listGitHubCredentials();
+		const detectSpinner = prompts.spinner();
+		detectSpinner.start("Checking for GitHub Desktop account...");
+		let credentials = await listValidGitHubCredentials();
+		detectSpinner.stop(
+			credentials.length > 0
+				? `Found ${credentials.length} valid account(s).`
+				: "No valid account found.",
+		);
 
 		if (credentials.length === 0) {
 			// No Desktop account detected — ask if they want to link one
@@ -270,7 +277,15 @@ export async function addCommand(): Promise<void> {
 					);
 
 					if (action === "skip") break;
-					credentials = listGitHubCredentials();
+
+					const retrySpinner = prompts.spinner();
+					retrySpinner.start("Checking for GitHub Desktop account...");
+					credentials = await listValidGitHubCredentials();
+					retrySpinner.stop(
+						credentials.length > 0
+							? `Found ${credentials.length} valid account(s).`
+							: "No valid account found.",
+					);
 
 					if (credentials.length === 0) {
 						prompts.log.warn("Still no GitHub Desktop account detected.");
@@ -323,11 +338,13 @@ export async function addCommand(): Promise<void> {
 					keychainLabel = abortIfCancelled(
 						await prompts.select({
 							message: "Select the GitHub credential to capture",
-							options: credentials.map((c) => ({
-								value: c.target,
-								label: c.target,
-								hint: c.user || undefined,
-							})),
+							options: credentials.map(
+								(c: { target: string; user: string }) => ({
+									value: c.target,
+									label: c.target,
+									hint: c.user || undefined,
+								}),
+							),
 						}),
 					);
 				}
@@ -378,7 +395,16 @@ export async function addCommand(): Promise<void> {
 								"  Please sign in with another account, then come back here.",
 						);
 
-						let newCredentials = listGitHubCredentials();
+						const newDetectSpinner = prompts.spinner();
+						newDetectSpinner.start(
+							"Checking for new GitHub Desktop account...",
+						);
+						let newCredentials = await listValidGitHubCredentials();
+						newDetectSpinner.stop(
+							newCredentials.length > 0
+								? `Found ${newCredentials.length} valid account(s).`
+								: "No new account found.",
+						);
 
 						while (newCredentials.length === 0) {
 							const action = abortIfCancelled(
@@ -406,11 +432,14 @@ export async function addCommand(): Promise<void> {
 								break;
 							}
 
-							newCredentials = listGitHubCredentials();
-
-							if (newCredentials.length === 0) {
-								prompts.log.warn("No new GitHub Desktop account detected yet.");
-							}
+							const retrySpinner = prompts.spinner();
+							retrySpinner.start("Checking for new GitHub Desktop account...");
+							newCredentials = await listValidGitHubCredentials();
+							retrySpinner.stop(
+								newCredentials.length > 0
+									? `Found ${newCredentials.length} valid account(s).`
+									: "No new account found.",
+							);
 						}
 
 						if (newCredentials.length > 0) {
@@ -420,11 +449,13 @@ export async function addCommand(): Promise<void> {
 									: abortIfCancelled(
 											await prompts.select({
 												message: "Select the new GitHub credential to save",
-												options: newCredentials.map((c) => ({
-													value: c.target,
-													label: c.target,
-													hint: c.user || undefined,
-												})),
+												options: newCredentials.map(
+													(c: { target: string; user: string }) => ({
+														value: c.target,
+														label: c.target,
+														hint: c.user || undefined,
+													}),
+												),
 											}),
 										);
 

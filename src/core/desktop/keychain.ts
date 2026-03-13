@@ -283,6 +283,26 @@ export function listGitHubCredentials(): DetectedCredential[] {
 		.map((c) => ({ target: c.target, user: c.userName }));
 }
 
+/**
+ * List GitHub credentials that have a valid (non-expired) OAuth token.
+ * Checks each credential against the GitHub API.
+ */
+export async function listValidGitHubCredentials(): Promise<
+	DetectedCredential[]
+> {
+	const candidates = listGitHubCredentials();
+	if (candidates.length === 0) return [];
+
+	const results = await Promise.all(
+		candidates.map(async (c) => {
+			const user = await validateStoredToken(c.target);
+			return user ? { target: c.target, user: user } : null;
+		}),
+	);
+
+	return results.filter((c): c is DetectedCredential => c !== null);
+}
+
 export function readKeychainEntry(label: string): KeychainEntry | null {
 	ensureKeychainTool();
 	try {

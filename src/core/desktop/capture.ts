@@ -10,7 +10,7 @@ import {
 import { addDesktopProfile } from "../desktop-profiles.js";
 import {
 	copyKeychainEntry,
-	listGitHubCredentials,
+	listValidGitHubCredentials,
 	readKeychainEntry,
 } from "./keychain.js";
 import { tryReadDesktopUsers } from "./local-storage.js";
@@ -47,8 +47,15 @@ export async function captureCurrentSession(): Promise<DesktopProfile> {
 		}),
 	);
 
-	// Detect GitHub credentials
-	const credentials = listGitHubCredentials();
+	// Detect GitHub credentials (validate tokens against GitHub API)
+	const detectSpinner = prompts.spinner();
+	detectSpinner.start("Checking for GitHub Desktop account...");
+	const credentials = await listValidGitHubCredentials();
+	detectSpinner.stop(
+		credentials.length > 0
+			? `Found ${credentials.length} valid account(s).`
+			: "No valid account found.",
+	);
 	let keychainLabel: string;
 
 	if (credentials.length === 0) {

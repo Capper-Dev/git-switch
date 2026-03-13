@@ -1,7 +1,8 @@
 import * as prompts from "@clack/prompts";
 import {
 	copyKeychainEntry,
-	listGitHubCredentials,
+	type DetectedCredential,
+	listValidGitHubCredentials,
 	readKeychainEntry,
 	renameKeychainEntry,
 } from "../../core/desktop/keychain.js";
@@ -82,7 +83,7 @@ async function saveCredential(keychainLabel: string): Promise<DesktopProfile> {
  * Select which credential to use when one or more are detected.
  */
 async function selectCredentialLabel(
-	credentials: ReturnType<typeof listGitHubCredentials>,
+	credentials: DetectedCredential[],
 ): Promise<string> {
 	if (credentials.length === 1) {
 		const label = credentials[0]?.target;
@@ -113,8 +114,15 @@ export async function desktopAddCommand(): Promise<void> {
 		"Important",
 	);
 
-	// Detect GitHub credentials with retry loop
-	let credentials = listGitHubCredentials();
+	// Detect GitHub credentials with token validation
+	const detectSpinner = prompts.spinner();
+	detectSpinner.start("Checking for GitHub Desktop account...");
+	let credentials = await listValidGitHubCredentials();
+	detectSpinner.stop(
+		credentials.length > 0
+			? `Found ${credentials.length} valid account(s).`
+			: "No valid account found.",
+	);
 
 	while (credentials.length === 0) {
 		prompts.log.warn(
@@ -141,7 +149,14 @@ export async function desktopAddCommand(): Promise<void> {
 			process.exit(0);
 		}
 
-		credentials = listGitHubCredentials();
+		const retrySpinner = prompts.spinner();
+		retrySpinner.start("Checking for GitHub Desktop account...");
+		credentials = await listValidGitHubCredentials();
+		retrySpinner.stop(
+			credentials.length > 0
+				? `Found ${credentials.length} valid account(s).`
+				: "No valid account found.",
+		);
 	}
 
 	// Credential detected — ask what to do
@@ -230,7 +245,14 @@ export async function desktopAddCommand(): Promise<void> {
 	);
 
 	// 4. Wait for new credential
-	let newCredentials = listGitHubCredentials();
+	const newDetectSpinner = prompts.spinner();
+	newDetectSpinner.start("Checking for new GitHub Desktop account...");
+	let newCredentials = await listValidGitHubCredentials();
+	newDetectSpinner.stop(
+		newCredentials.length > 0
+			? `Found ${newCredentials.length} valid account(s).`
+			: "No new account found.",
+	);
 
 	while (newCredentials.length === 0) {
 		const action = abortIfCancelled(
@@ -258,11 +280,14 @@ export async function desktopAddCommand(): Promise<void> {
 			process.exit(0);
 		}
 
-		newCredentials = listGitHubCredentials();
-
-		if (newCredentials.length === 0) {
-			prompts.log.warn("No new GitHub Desktop account detected yet.");
-		}
+		const retrySpinner = prompts.spinner();
+		retrySpinner.start("Checking for new GitHub Desktop account...");
+		newCredentials = await listValidGitHubCredentials();
+		retrySpinner.stop(
+			newCredentials.length > 0
+				? `Found ${newCredentials.length} valid account(s).`
+				: "No new account found.",
+		);
 	}
 
 	// 5. Save the new account
