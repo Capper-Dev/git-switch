@@ -196,42 +196,43 @@ export async function desktopAddCommand(): Promise<void> {
 	}
 
 	// "Sign in to another" flow:
-	// 1. Check if current credential is already saved as a desktop profile
-	const currentLabel = await selectCredentialLabel(credentials);
-
-	const currentEntry = readKeychainEntry(currentLabel);
-	if (!currentEntry) {
-		prompts.cancel(
-			`Could not read credential: "${currentLabel}"\n` +
-				"Make sure GitHub Desktop is signed in with this account.",
-		);
-		process.exit(1);
-	}
-
+	// 1. Save and park ALL active credentials so Desktop shows sign-in screen
 	const existingProfiles = listAllDesktopProfiles();
-	let profileToPark = existingProfiles.find(
-		(dp) => dp.keychain_label === currentLabel,
-	);
+	const profilesToRestore: DesktopProfile[] = [];
 
-	if (profileToPark) {
-		prompts.log.info(
-			`Current account is already saved as "${profileToPark.id}".`,
+	for (const cred of credentials) {
+		const entry = readKeychainEntry(cred.target);
+		if (!entry) continue;
+
+		let profile = existingProfiles.find(
+			(dp) => dp.keychain_label === cred.target,
 		);
-	} else {
-		// Not saved yet — save it first so the credential isn't lost
-		prompts.log.step("First, let's save the current account.");
-		profileToPark = await saveCredential(currentLabel);
+
+		if (profile) {
+			prompts.log.info(
+				`Account "${cred.user || cred.target}" is already saved as "${profile.id}".`,
+			);
+		} else {
+			prompts.log.step(
+				`Saving account "${cred.user || cred.target}" before parking.`,
+			);
+			profile = await saveCredential(cred.target);
+		}
+
+		profilesToRestore.push(profile);
 	}
 
-	// 2. Park the active credential (move it to stored label so Desktop forgets it)
+	// 2. Park all active credentials (move to stored labels so Desktop forgets them)
 	const parkSpinner = prompts.spinner();
-	parkSpinner.start("Parking current session...");
-	renameKeychainEntry(
-		profileToPark.keychain_label,
-		profileToPark.stored_label,
-		profileToPark.email,
-	);
-	parkSpinner.stop("Current session parked.");
+	parkSpinner.start(`Parking ${profilesToRestore.length} session(s)...`);
+	for (const profile of profilesToRestore) {
+		renameKeychainEntry(
+			profile.keychain_label,
+			profile.stored_label,
+			profile.email,
+		);
+	}
+	parkSpinner.stop(`${profilesToRestore.length} session(s) parked.`);
 
 	// 3. Kill & relaunch Desktop so user can sign in with another account
 	if (isDesktopRunning()) {
@@ -270,13 +271,15 @@ export async function desktopAddCommand(): Promise<void> {
 		);
 
 		if (action === "cancel") {
-			// Restore the parked credential before exiting
-			renameKeychainEntry(
-				profileToPark.stored_label,
-				profileToPark.keychain_label,
-				profileToPark.email,
-			);
-			prompts.cancel("Aborted. Previous session restored.");
+			// Restore all parked credentials before exiting
+			for (const profile of profilesToRestore) {
+				renameKeychainEntry(
+					profile.stored_label,
+					profile.keychain_label,
+					profile.email,
+				);
+			}
+			prompts.cancel("Aborted. Previous session(s) restored.");
 			process.exit(0);
 		}
 
