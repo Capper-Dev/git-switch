@@ -1,6 +1,6 @@
 {
   "name": "git-switch",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Git identity and SSH key profile switcher for multi-account developers",
   "type": "commonjs",
   "bin": {
