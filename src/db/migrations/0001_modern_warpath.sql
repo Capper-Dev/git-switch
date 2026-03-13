@@ -1,0 +1,1 @@
+ALTER TABLE `desktop_profiles` DROP COLUMN `app_state_accounts`;
