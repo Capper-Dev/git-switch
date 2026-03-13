@@ -295,8 +295,8 @@ export async function listValidGitHubCredentials(): Promise<
 
 	const results = await Promise.all(
 		candidates.map(async (c) => {
-			const user = await validateStoredToken(c.target);
-			return user ? { target: c.target, user: user } : null;
+			const userInfo = await validateStoredToken(c.target);
+			return userInfo ? { target: c.target, user: userInfo.login } : null;
 		}),
 	);
 
@@ -327,13 +327,22 @@ function resolveOAuthToken(label: string): string | null {
 	return token;
 }
 
+export interface GitHubUserInfo {
+	login: string;
+	id: number;
+	name: string | null;
+	avatar_url: string;
+	plan?: { name: string };
+}
+
 /**
  * Validate a stored GitHub OAuth token against the GitHub API.
- * Returns the GitHub username if valid, or null if expired/invalid.
+ * Returns full user info if valid, or null if expired/invalid.
+ * Returns a minimal object with login="unknown" on network errors.
  */
 export async function validateStoredToken(
 	label: string,
-): Promise<string | null> {
+): Promise<GitHubUserInfo | null> {
 	const token = resolveOAuthToken(label);
 	if (!token) return null;
 
@@ -345,13 +354,12 @@ export async function validateStoredToken(
 			},
 		});
 		if (resp.ok) {
-			const data = (await resp.json()) as { login: string };
-			return data.login;
+			return (await resp.json()) as GitHubUserInfo;
 		}
 		return null;
 	} catch {
 		// Network error — can't validate, assume OK
-		return "unknown";
+		return { login: "unknown", id: 0, name: null, avatar_url: "" };
 	}
 }
 
@@ -372,11 +380,13 @@ export interface GitHubDesktopUser {
 }
 
 /**
- * Fetch full GitHub user data from a stored credential, returning a Desktop-compatible
- * users JSON string (with LevelDB prefix byte). Returns null if the token is invalid.
+ * Build Desktop-compatible users JSON from a credential.
+ * If pre-fetched user info is provided, only fetches /user/emails (avoids duplicate /user call).
+ * Returns the value with LevelDB prefix byte (\x01), ready to store in the DB or write to LevelDB.
  */
 export async function fetchDesktopUsersJson(
 	label: string,
+	preFetchedUser?: GitHubUserInfo,
 ): Promise<string | null> {
 	const token = resolveOAuthToken(label);
 	if (!token) return null;
@@ -387,20 +397,20 @@ export async function fetchDesktopUsersJson(
 			Accept: "application/vnd.github.v3+json",
 		};
 
-		const [userResp, emailsResp] = await Promise.all([
-			fetch("https://api.github.com/user", { headers }),
-			fetch("https://api.github.com/user/emails", { headers }),
-		]);
+		let user: GitHubUserInfo;
+		if (preFetchedUser && preFetchedUser.id !== 0) {
+			user = preFetchedUser;
+		} else {
+			const userResp = await fetch("https://api.github.com/user", {
+				headers,
+			});
+			if (!userResp.ok) return null;
+			user = (await userResp.json()) as GitHubUserInfo;
+		}
 
-		if (!userResp.ok) return null;
-
-		const user = (await userResp.json()) as {
-			login: string;
-			id: number;
-			name: string | null;
-			avatar_url: string;
-			plan?: { name: string };
-		};
+		const emailsResp = await fetch("https://api.github.com/user/emails", {
+			headers,
+		});
 
 		let emails: GitHubDesktopUser["emails"] = [];
 		if (emailsResp.ok) {
@@ -418,7 +428,7 @@ export async function fetchDesktopUsersJson(
 			plan: user.plan?.name ?? "free",
 		};
 
-		// LevelDB prefix byte \x01 + JSON array
+		// LevelDB prefix byte — matches the format Electron localStorage uses
 		return `\x01${JSON.stringify([desktopUser])}`;
 	} catch {
 		return null;
