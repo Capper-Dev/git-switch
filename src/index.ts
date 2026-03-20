@@ -5,6 +5,7 @@ import { cloneCommand } from "./commands/clone.js";
 import { desktopAddCommand } from "./commands/desktop/add.js";
 import { desktopLinkCommand } from "./commands/desktop/link.js";
 import { desktopListCommand } from "./commands/desktop/list.js";
+import { desktopReauthCommand } from "./commands/desktop/reauth.js";
 import { desktopRemoveCommand } from "./commands/desktop/remove.js";
 import { desktopSwitchCommand } from "./commands/desktop/switch.js";
 import { globalCommand } from "./commands/global.js";
@@ -102,6 +103,11 @@ desktop
 	.description("Switch to a Desktop profile")
 	.argument("[id]", "Desktop profile ID")
 	.action(wrap((id?: string) => desktopSwitchCommand(id)));
+desktop
+	.command("reauth")
+	.description("Re-authenticate an expired Desktop profile")
+	.argument("[id]", "Desktop profile ID")
+	.action(wrap((id?: string) => desktopReauthCommand(id)));
 desktop
 	.command("link")
 	.description("Link Desktop profile to git-switch profile")
